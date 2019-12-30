@@ -1,4 +1,7 @@
 
+**This project is not maintained anymore. If you're interested in taking it over,
+please tell me at info@bitfire.at.**
+
 To be informed about updates:
 
 * [follow GfxTablet on Twitter](https://twitter.com/GfxTablet)
@@ -71,7 +74,7 @@ Part 1: uinput driver
 
 On your PC, either download one of these binaries (don't forget to `chmod a+x` it):
 
-* [networktablet 64-bit, dynamically linked, tested with Fedora 23](https://github.com/rfc2822/GfxTablet/releases/download/android-app-1.4/networktablet)
+* [networktablet 64-bit, dynamically linked, tested with Debian Stretch/Buster](https://github.com/rfc2822/GfxTablet/releases/download/android-app-1.4-linux-driver-1.5/networktablet)
 
 or compile it yourself (don't be afraid, it's only one file)
 
