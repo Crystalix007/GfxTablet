@@ -1,4 +1,5 @@
 #include "protocol.h"
+#include <stdbool.h>
 #include <X11/X.h>
 #include <X11/Xlib.h>
 #include <X11/Xutil.h>
@@ -31,7 +32,7 @@ typedef struct sockaddr_in sockaddr_in;
 
 typedef struct sending_t {
 	sockaddr_in from;
-	int slen;
+	socklen_t slen;
 } sending_t;
 
 void init_device(int fd) {
@@ -151,26 +152,36 @@ void* send_current_screen(void* arg) {
 		die("file non-existant!");
 	}
 	from.sin_port = htons(GFXTABLET_PORT);
-	int max = 60000;
-	char buff[max + 30];
+	struct image_packet img;
 	int n = 1;
-	while (fread(buff, sizeof(char), max, istream) != 0) {
-		printf("Send packet to %s:%d\n", inet_ntoa(from.sin_addr), ntohs(from.sin_port));
-		buff[max + 29] = n;
-		if (sendto(udp_socket, buff, sizeof(buff), 0, (struct sockaddr*)&from, slen) == -1) {
+
+	while (fread(img.data, sizeof(char), MAX_IMAGE_CHUNK_DATA, istream) != 0) {
+		printf("Send image packet %d to %s:%d (%lu bytes)\n", n, inet_ntoa(from.sin_addr), ntohs(from.sin_port), sizeof(img));
+		img.seqNum = n;
+
+		if (sendto(udp_socket, &img, sizeof(img), 0, (struct sockaddr*)&from, slen) == -1) {
 			die("sendto()");
 		}
+
 		n++;
-		for (int r = 0; r <= max; r++) {
-			buff[r] = 0;
+
+		for (int r = 0; r <= MAX_IMAGE_CHUNK_DATA; r++) {
+			img.data[r] = 0;
 		}
+
+		usleep(80000);
 	}
+
 	fclose(istream);
-	char buf[1];
-	buf[0] = n - 1;
-	if (sendto(udp_socket, buf, strlen(buff) + 1, 0, (struct sockaddr*)&from, slen) == -1) {
+	struct terminating_packet term;
+	term.seqCount = n - 1;
+	term.seqNum = 0;
+
+	if (sendto(udp_socket, &term, sizeof(term), 0, (struct sockaddr*)&from, slen) == -1) {
 		die("sendto()");
 	}
+
+	printf("Sent terminating packet 0 to %s:%d\n", inet_ntoa(from.sin_addr), ntohs(from.sin_port));
 	sending = 0;
 }
 
@@ -180,6 +191,7 @@ int main(void) {
 	event_packet ev_pkt;
 	sending_t sock_t;
 	pthread_t ev_retreive_t, screen_send_t;
+	time_t lastScreenshot = 0;
 
 	if ((device = open("/dev/uinput", O_WRONLY | O_NONBLOCK)) < 0)
 		die("error: open");
@@ -194,15 +206,26 @@ int main(void) {
 	signal(SIGINT, quit);
 	signal(SIGTERM, quit);
 
-	while (recvfrom(udp_socket, &ev_pkt, sizeof(event_packet), 0, (struct sockaddr*)&sock_t.from,
-	                &sock_t.slen) >= 9) { // every packet has at least 9 bytes
+	ssize_t recvPackLen;
+
+	while (true) {
+		recvPackLen = recvfrom(udp_socket, &ev_pkt, sizeof(ev_pkt), 0, (struct sockaddr*)&sock_t.from,
+	                &sock_t.slen);
+		if (recvPackLen < 0) { // we have an error
+			fprintf(stderr, "Received error trying to fetch packet. errno: %d\n", errno);
+		}
+		if (recvPackLen < 9) { // every packet has at least 9 bytes
+			break;
+		}
+
 		printf(".");
 		fflush(0);
 
-		if (memcmp(ev_pkt.signature, "GfxTablet", 9) != 0) {
+		if (strcmp(ev_pkt.signature, "GfxTablet") != 0) {
 			fprintf(stderr, "\nGot unknown packet on port %i, ignoring\n", GFXTABLET_PORT);
 			continue;
 		}
+
 		ev_pkt.version = ntohs(ev_pkt.version);
 		if (ev_pkt.version != PROTOCOL_VERSION) {
 			fprintf(stderr,
@@ -243,10 +266,15 @@ int main(void) {
 				break;
 		}
 
-		if (ev_pkt.pressure == 0 && memcmp(inet_ntoa(sock_t.from.sin_addr), "0.0.0.0", 7) != 0) {
-			if (pthread_create(&screen_send_t, NULL, send_current_screen, &sock_t)) {
-				fprintf(stderr, "Error creating thread\n");
-				return 1;
+		if (ev_pkt.pressure == 0 && strcmp(inet_ntoa(sock_t.from.sin_addr), "0.0.0.0") != 0) {
+			time_t now = time(NULL);
+
+			if (difftime(now, lastScreenshot) >= 1) { // rate limit the frequency of sending screenshots
+				lastScreenshot = now;
+				if (pthread_create(&screen_send_t, NULL, send_current_screen, &sock_t)) {
+					fprintf(stderr, "Error creating thread\n");
+					return 1;
+				}
 			}
 		}
 	}

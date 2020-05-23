@@ -5,7 +5,7 @@ LDFLAGS := `pkg-config --libs ${LIBS}`
 PREFIX  := /usr/local
 BINDIR  := ${PREFIX}/bin
 
-networktablet : networktablet.c
+networktablet : networktablet.c protocol.h
 
 debug: DEBUG = -g
 

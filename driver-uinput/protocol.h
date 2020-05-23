@@ -1,5 +1,4 @@
 #define GFXTABLET_PORT 40118
-
 #define PROTOCOL_VERSION 2
 
 #pragma pack(push)
@@ -7,6 +6,8 @@
 
 #define EVENT_TYPE_MOTION 0
 #define EVENT_TYPE_BUTTON 1
+
+#include <stdint.h>
 
 struct event_packet {
 	char signature[9];
@@ -25,6 +26,18 @@ struct event_packet {
 		                    2 = button 2 */
 		int8_t down;   /* 1 = button down, 0 = button up */
 	};
+};
+
+#define MAX_IMAGE_CHUNK_DATA 60000
+
+struct image_packet {
+	char data[MAX_IMAGE_CHUNK_DATA];
+	char seqNum;
+};
+
+struct terminating_packet {
+	int seqCount;
+	char seqNum;
 };
 
 #pragma pack(pop)
